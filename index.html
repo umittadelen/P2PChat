@@ -48,7 +48,7 @@
         const connectToPeerInput = document.getElementById('connectToPeerInput');
         const connectButton = document.getElementById('connectButton');
 
-        let conn;
+        let conn = null;  // Initialize connection as null
         let username = prompt("Enter your username:", "Anonymous");
         let usernameSuffix = 1;
 
@@ -89,10 +89,14 @@
 
         // Send message to connected peer
         sendButton.addEventListener('click', () => {
-            const message = messageInput.value;
-            appendMessage(`${username}: ${message}`);
-            conn.send(`${username}: ${message}`);
-            messageInput.value = '';
+            if (conn && conn.open) {  // Check if the connection is established
+                const message = messageInput.value;
+                appendMessage(`${username}: ${message}`);
+                conn.send(`${username}: ${message}`);
+                messageInput.value = '';
+            } else {
+                alert("No peer connection. Please connect to a peer first.");
+            }
         });
 
         // Function to handle incoming messages
@@ -107,6 +111,12 @@
 
             conn.on('close', () => {
                 appendMessage('Connection closed');
+                conn = null;  // Reset the connection when it's closed
+            });
+
+            conn.on('error', (err) => {
+                appendMessage('Connection error: ' + err);
+                conn = null;
             });
         }
 
