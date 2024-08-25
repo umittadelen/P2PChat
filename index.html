@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>P2P Chat</title>
+    <title>WebRTC Data Channel Chat</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -30,103 +30,78 @@
     </style>
 </head>
 <body>
-    <h1>P2P Chat</h1>
+    <h1>WebRTC Chat</h1>
     <div id="chat"></div>
     <input type="text" id="messageInput" placeholder="Type your message here..." />
     <button id="sendButton">Send</button>
 
-    <p>Your Peer ID: <span id="peer-id"></span></p>
-    <input type="text" id="connectToPeerInput" placeholder="Enter peer ID to connect" />
-    <button id="connectButton">Connect to Peer</button>
+    <p>Share your Offer/Answer:</p>
+    <textarea id="offerInput" rows="4" cols="50" placeholder="Paste offer/answer here"></textarea>
+    <button id="offerButton">Set Remote Description</button>
 
-    <script src="https://cdn.jsdelivr.net/npm/peerjs@1.3.1/dist/peerjs.min.js"></script>
     <script>
-        const peer = new Peer();
+        let localConnection;
+        let remoteConnection;
+        let dataChannel;
+
         const chatBox = document.getElementById('chat');
         const messageInput = document.getElementById('messageInput');
         const sendButton = document.getElementById('sendButton');
-        const connectToPeerInput = document.getElementById('connectToPeerInput');
-        const connectButton = document.getElementById('connectButton');
+        const offerInput = document.getElementById('offerInput');
+        const offerButton = document.getElementById('offerButton');
 
-        let conn = null;  // Initialize connection as null
-        let username = prompt("Enter your username:", "Anonymous");
-        let usernameSuffix = 1;
+        // Set up a new WebRTC connection and data channel
+        function setupConnection() {
+            localConnection = new RTCPeerConnection();
 
-        // Function to check if the username is already taken in the current chat
-        function isUsernameTaken(name) {
-            const messages = chatBox.getElementsByTagName('p');
-            for (let message of messages) {
-                if (message.textContent.startsWith(name + ":")) {
-                    return true;
+            dataChannel = localConnection.createDataChannel('chat');
+            dataChannel.onopen = () => console.log('Data channel is open');
+            dataChannel.onmessage = (event) => appendMessage(`Remote: ${event.data}`);
+
+            localConnection.onicecandidate = ({candidate}) => {
+                if (candidate) {
+                    console.log('New ICE candidate:', candidate);
+                    offerInput.value = JSON.stringify(localConnection.localDescription);
                 }
-            }
-            return false;
+            };
+
+            // Generate an offer
+            localConnection.createOffer()
+                .then(offer => localConnection.setLocalDescription(offer))
+                .then(() => console.log('Offer created:', localConnection.localDescription));
         }
 
-        // Adjust the username if it's already taken
-        while (isUsernameTaken(username)) {
-            username = `${username}${usernameSuffix}`;
-            usernameSuffix++;
-        }
-
-        // Display the Peer ID so that others can connect to you
-        peer.on('open', (id) => {
-            document.getElementById('peer-id').textContent = id;
+        // Handle the remote offer/answer
+        offerButton.addEventListener('click', () => {
+            const remoteDesc = new RTCSessionDescription(JSON.parse(offerInput.value));
+            localConnection.setRemoteDescription(remoteDesc)
+                .then(() => {
+                    if (remoteDesc.type === 'offer') {
+                        localConnection.createAnswer()
+                            .then(answer => localConnection.setLocalDescription(answer))
+                            .then(() => console.log('Answer created:', localConnection.localDescription));
+                    }
+                });
         });
 
-        // When someone connects to you
-        peer.on('connection', (connection) => {
-            conn = connection;
-            setupConnectionHandlers();
-        });
-
-        // Connect to another peer
-        connectButton.addEventListener('click', () => {
-            const peerId = connectToPeerInput.value;
-            conn = peer.connect(peerId);
-            setupConnectionHandlers();
-        });
-
-        // Send message to connected peer
+        // Send a message
         sendButton.addEventListener('click', () => {
-            if (conn && conn.open) {  // Check if the connection is established
-                const message = messageInput.value;
-                appendMessage(`${username}: ${message}`);
-                conn.send(`${username}: ${message}`);
-                messageInput.value = '';
-            } else {
-                alert("No peer connection. Please connect to a peer first.");
-            }
+            const message = messageInput.value;
+            dataChannel.send(message);
+            appendMessage(`You: ${message}`);
+            messageInput.value = '';
         });
 
-        // Function to handle incoming messages
-        function setupConnectionHandlers() {
-            conn.on('open', () => {
-                appendMessage('Connected to peer');
-            });
-
-            conn.on('data', (data) => {
-                appendMessage(data);
-            });
-
-            conn.on('close', () => {
-                appendMessage('Connection closed');
-                conn = null;  // Reset the connection when it's closed
-            });
-
-            conn.on('error', (err) => {
-                appendMessage('Connection error: ' + err);
-                conn = null;
-            });
-        }
-
-        // Function to add messages to chatbox
+        // Append a message to the chat box
         function appendMessage(message) {
             const p = document.createElement('p');
             p.textContent = message;
             chatBox.appendChild(p);
-            chatBox.scrollTop = chatBox.scrollHeight; // Auto scroll to the bottom
+            chatBox.scrollTop = chatBox.scrollHeight;
         }
+
+        // Initialize connection
+        setupConnection();
     </script>
 </body>
 </html>
